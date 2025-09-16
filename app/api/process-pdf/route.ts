@@ -1,54 +1,61 @@
-import { type NextRequest, NextResponse } from "next/server"
-import pdf from "pdf-parse"
+import { NextResponse } from "next/server";
+import pdf from "pdf-parse";
 
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
   try {
-    console.log("[v0] API process-pdf called")
+    console.log("[API] process-pdf llamado");
 
-    const body = await request.json()
-    console.log("[v0] Request body:", body)
+    const body = await req.json();
+    const { pdfUrl, questionConfig } = body;
 
-    const { fileUrl, questionConfig } = body
+    console.log("[API] Body recibido:", body);
 
-    if (!fileUrl) {
-      console.log("[v0] Missing fileUrl")
-      return NextResponse.json({ error: "File URL is required" }, { status: 400 })
+    if (!pdfUrl) {
+      console.log("[API] Falta pdfUrl");
+      return NextResponse.json(
+        { error: "PDF URL is required" },
+        { status: 400 }
+      );
     }
 
     if (!questionConfig) {
-      console.log("[v0] Missing questionConfig")
-      return NextResponse.json({ error: "Question configuration is required" }, { status: 400 })
+      console.log("[API] Falta questionConfig");
+      return NextResponse.json(
+        { error: "Question configuration is required" },
+        { status: 400 }
+      );
     }
 
-    console.log("[v0] Processing PDF from URL:", fileUrl)
+    console.log("[API] Descargando PDF desde:", pdfUrl);
 
-    try {
-      // Descargar el PDF
-      const response = await fetch(fileUrl)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch PDF: ${response.statusText}`)
-      }
-
-      const arrayBuffer = await response.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
-
-      // Extraer texto del PDF
-      const data = await pdf(buffer)
-      const extractedText = data.text
-
-      console.log("[v0] PDF processed successfully, text length:", extractedText.length)
-
-      return NextResponse.json({
-        success: true,
-        extractedText,
-        message: "PDF processed successfully",
-      })
-    } catch (pdfError) {
-      console.error("[v0] PDF processing error:", pdfError)
-      return NextResponse.json({ error: "Failed to process PDF file" }, { status: 500 })
+    const response = await fetch(pdfUrl);
+    if (!response.ok) {
+      throw new Error(`No se pudo descargar el PDF: ${response.status}`);
     }
-  } catch (error) {
-    console.error("[v0] API process-pdf error:", error)
-    return NextResponse.json({ error: "PDF processing failed" }, { status: 500 })
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    console.log("[API] Buffer length:", buffer.length);
+
+    const data = await pdf(buffer);
+    const extractedText = data.text;
+
+    console.log(
+      "[API] PDF procesado, longitud del texto extraído:",
+      extractedText.length
+    );
+
+    return NextResponse.json({
+      success: true,
+      text: extractedText,
+      message: "PDF processed successfully",
+    });
+  } catch (error: any) {
+    console.error("[API] Error procesando PDF:", error);
+    return NextResponse.json(
+      { error: "Failed to process PDF file", details: error.message },
+      { status: 500 }
+    );
   }
 }

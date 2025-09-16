@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import 'katex/dist/katex.min.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -123,5 +124,23 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+
+@media print {
+  .print-colors * {
+    -webkit-print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Evitar saltos de página dentro de gráficos */
+  .math-graph {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }

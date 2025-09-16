@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
 
     // Check if catedra has associated exams
     const { data: examenes, error: examenesError } = await supabase

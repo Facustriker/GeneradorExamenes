@@ -6,7 +6,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const catedraId = searchParams.get("catedra_id")
 
-    const supabase = createClient()
+    const supabase = await createClient()
 
     let query = supabase
       .from("examenes")
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabase = createClient()
+    const supabase = await createClient()
 
     const { data, error } = await supabase
       .from("examenes")

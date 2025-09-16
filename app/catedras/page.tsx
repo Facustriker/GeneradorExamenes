@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,38 +11,79 @@ import { ArrowLeft, Plus, Trash2, BookOpen } from "lucide-react"
 import Link from "next/link"
 
 export default function CatedrasPage() {
-  const [catedras, setCatedras] = useState([
-    { id: 1, nombre: "Matemática", examenesCount: 5 },
-    { id: 2, nombre: "Física", examenesCount: 3 },
-    { id: 3, nombre: "Química", examenesCount: 0 },
-    { id: 4, nombre: "Historia", examenesCount: 2 },
-  ])
-
+  const [catedras, setCatedras] = useState<any[]>([])
   const [nuevaCatedra, setNuevaCatedra] = useState("")
   const [error, setError] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
-  const handleAgregarCatedra = () => {
+// Cargar cátedras desde la API
+const fetchCatedras = async () => {
+  try {
+    const res = await fetch(`/api/catedras?t=${Date.now()}`)
+    if (!res.ok) throw new Error("Error al traer cátedras")
+    const data = await res.json()
+    console.log("Data received in frontend:", data)
+    setCatedras(data)
+  } catch (err) {
+    console.error(err)
+    setError("No se pudieron cargar las cátedras")
+  }
+}
+
+useEffect(() => {
+  fetchCatedras()
+}, [])
+
+  // Crear nueva cátedra
+  const handleAgregarCatedra = async () => {
     if (!nuevaCatedra.trim()) {
       setError("El nombre de la cátedra es obligatorio")
       return
     }
 
-    if (catedras.some((c) => c.nombre.toLowerCase() === nuevaCatedra.toLowerCase())) {
-      setError("Ya existe una cátedra con ese nombre")
-      return
+    try {
+      const res = await fetch("/api/catedras", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nuevaCatedra }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        setError(err.error || "Error al crear la cátedra")
+        return
+      }
+
+      const nueva = await res.json()
+      setCatedras((prev) => [...prev, nueva])
+      setNuevaCatedra("")
+      setError("")
+      setIsDialogOpen(false)
+    } catch (e) {
+      console.error(e)
+      setError("Error de red")
     }
-
-    const nuevaId = Math.max(...catedras.map((c) => c.id)) + 1
-    setCatedras([...catedras, { id: nuevaId, nombre: nuevaCatedra, examenesCount: 0 }])
-    setNuevaCatedra("")
-    setError("")
-    setIsDialogOpen(false)
   }
 
-  const handleEliminarCatedra = (id: number) => {
-    setCatedras(catedras.filter((c) => c.id !== id))
+  // Eliminar cátedra
+  const handleEliminarCatedra = async (id: number) => {
+    try {
+      const res = await fetch(`/api/catedras/${id}`, { method: "DELETE" })
+      if (!res.ok) {
+        const err = await res.json()
+        alert(err.error || "No se pudo eliminar")
+        return
+      }
+      setCatedras((prev) => prev.filter((c) => c.id !== id))
+    } catch (e) {
+      console.error(e)
+    }
   }
+
+  console.log("Estado actual de catedras:", catedras.map(c => ({
+  nombre: c.nombre,
+  examenesCount: c.examenesCount
+})))
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -113,13 +154,14 @@ export default function CatedrasPage() {
                   </div>
                   <div>
                     <h3 className="font-heading font-bold text-lg text-slate-800">{catedra.nombre}</h3>
-                    <p className="text-slate-600">
-                      {catedra.examenesCount} {catedra.examenesCount === 1 ? "examen" : "exámenes"} asociados
+                    <p className="text-slate-600"> 
+                      {catedra.examenesCount ?? 0}{" "}
+                      {(catedra.examenesCount ?? 0) === 1 ? "examen" : "exámenes"} asociados
                     </p>
                   </div>
                 </div>
 
-                {catedra.examenesCount === 0 && (
+                {(catedra.examenes_count ?? 0) === 0 && (
                   <Button
                     variant="outline"
                     size="sm"

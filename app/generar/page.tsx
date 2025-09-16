@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Textarea } from "@/components/ui/textarea"
 import { Upload, FileText, ArrowLeft, Plus, Trash2, Settings, Loader2, Edit3, Save, X } from "lucide-react"
 import Link from "next/link"
+import MathGraph from "@/components/MathGraph"
+import MathText from "@/components/MathText"
+import { useRouter } from 'next/navigation'
 
 interface Pregunta {
   id: string
@@ -32,16 +35,18 @@ interface PreguntaGenerada {
   justificacion?: string
   puntaje: number
   incluyeGrafico: boolean
-}
-
-interface ExamenData {
-  nombre: string
-  catedra: string
-  preguntas: PreguntaGenerada[]
-  fechaCreacion: Date
+  graphicData?: {
+    type: 'line' | 'bar' | 'scatter'
+    title: string
+    xLabel: string
+    yLabel: string
+    data: Array<{ x: number; y: number }>
+    annotations?: Array<{ x: number; y: number; text: string }>
+  }
 }
 
 export default function GenerarExamenPage() {
+  const router = useRouter()
   const [isDragOver, setIsDragOver] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [showConfiguration, setShowConfiguration] = useState(false)
@@ -51,22 +56,30 @@ export default function GenerarExamenPage() {
   const [examenGenerado, setExamenGenerado] = useState<PreguntaGenerada[]>([])
   const [showExamen, setShowExamen] = useState(false)
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
-
+  const [catedras, setCatedras] = useState<{ id: string; nombre: string; examenesCount: number }[]>([])
   const [showExportDialog, setShowExportDialog] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [nombreExamen, setNombreExamen] = useState("")
   const [catedraSeleccionada, setCatedraSeleccionada] = useState("")
+  const [error, setError] = useState("")
 
-  const catedras = [
-    "Matemática",
-    "Física",
-    "Química",
-    "Historia",
-    "Lengua y Literatura",
-    "Biología",
-    "Geografía",
-    "Inglés",
-  ]
+  // Traer cátedras desde la base de datos
+  useEffect(() => {
+    const fetchCatedras = async () => {
+      try {
+        const res = await fetch("/api/catedras")
+        if (!res.ok) throw new Error("Error al traer cátedras")
+        const data = await res.json()
+        // Mapear para incluir un count de exámenes (por ahora 0 si no lo tenemos)
+        const catedrasConCount = data.map((c: any) => ({ ...c, examenesCount: 0 }))
+        setCatedras(catedrasConCount)
+      } catch (err) {
+        console.error(err)
+        setError("No se pudieron cargar las cátedras")
+      }
+    }
+    fetchCatedras()
+  }, [])
 
   const [nuevaPregunta, setNuevaPregunta] = useState<Omit<Pregunta, "id">>({
     tipoPregunta: "multiple-opcion",
@@ -153,179 +166,195 @@ export default function GenerarExamenPage() {
   const puedeCrearExamen = preguntas.length > 0 && selectedFile
 
   // Funciones para generar examen con IA
-  const handleCreateExam = async () => {
-    if (!selectedFile || preguntas.length === 0) return
+const handleCreateExam = async () => {
+  if (!selectedFile || preguntas.length === 0) return
 
-    setIsGenerating(true)
+  setIsGenerating(true)
 
-    try {
-      console.log("[v0] Iniciando generación de examen con IA")
+  try {
+    console.log("[v0] Iniciando generación de examen con IA")
+    console.log("[v0] Archivo seleccionado:", selectedFile.name, selectedFile.size, selectedFile.type)
 
-      // Primero subir el PDF y extraer texto
-      const formData = new FormData()
-      formData.append("file", selectedFile)
+    // Primero subir el PDF
+    const formData = new FormData()
+    formData.append("file", selectedFile)
 
-      console.log("[v0] Subiendo PDF...")
-      const uploadResponse = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      })
+    console.log("[v0] Subiendo PDF...")
+    const uploadResponse = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    })
 
-      if (!uploadResponse.ok) {
-        throw new Error("Error al subir el archivo PDF")
-      }
-
-      const { url: pdfUrl } = await uploadResponse.json()
-      console.log("[v0] PDF subido correctamente:", pdfUrl)
-
-      // Procesar PDF para extraer texto
-      console.log("[v0] Procesando PDF...")
-      const processResponse = await fetch("/api/process-pdf", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ pdfUrl }),
-      })
-
-      if (!processResponse.ok) {
-        throw new Error("Error al procesar el PDF")
-      }
-
-      const { text: pdfText } = await processResponse.json()
-      console.log("[v0] Texto extraído del PDF:", pdfText.substring(0, 200) + "...")
-
-      // Generar preguntas con IA
-      console.log("[v0] Generando preguntas con IA...")
-      const generateResponse = await fetch("/api/generate-questions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          pdfText,
-          questions: preguntas.map((p) => ({
-            type:
-              p.tipoPregunta === "multiple-opcion"
-                ? "multiple"
-                : p.tipoPregunta === "desarrollo"
-                  ? "development"
-                  : "truefalse",
-            points: p.puntaje,
-            category: p.tipo,
-            includesGraphic: p.incluyeGrafico,
-            justification:
-              p.justificacionVF === "verdaderas" ? "true" : p.justificacionVF === "falsas" ? "false" : "none",
-          })),
-        }),
-      })
-
-      if (!generateResponse.ok) {
-        throw new Error("Error al generar preguntas con IA")
-      }
-
-      // Leer la respuesta streaming
-      const reader = generateResponse.body?.getReader()
-      let fullResponse = ""
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = new TextDecoder().decode(value)
-          fullResponse += chunk
-        }
-      }
-
-      console.log("[v0] Respuesta completa de IA:", fullResponse)
-
-      // Parsear la respuesta JSON
-      let aiQuestions
-      try {
-        // La IA puede devolver el JSON dentro de bloques de código, extraerlo
-        const jsonMatch = fullResponse.match(/\{[\s\S]*\}/)
-        const jsonStr = jsonMatch ? jsonMatch[0] : fullResponse
-        aiQuestions = JSON.parse(jsonStr)
-      } catch (parseError) {
-        console.error("[v0] Error parseando respuesta de IA:", parseError)
-        console.log("[v0] Respuesta raw:", fullResponse)
-        throw new Error("Error al procesar la respuesta de la IA")
-      }
-
-      // Convertir preguntas de IA al formato interno
-      const preguntasGeneradas: PreguntaGenerada[] = aiQuestions.questions.map((q: any, index: number) => ({
-        id: `gen-${Date.now()}-${index}`,
-        enunciado: q.question,
-        tipo:
-          q.type === "multiple"
-            ? ("multiple-opcion" as const)
-            : q.type === "development"
-              ? ("desarrollo" as const)
-              : ("verdadero-falso" as const),
-        opciones: q.options || undefined,
-        respuestaCorrecta: q.correctAnswer || undefined,
-        justificacion:
-          q.justification && q.justification !== "none"
-            ? `Justifique las respuestas ${q.justification === "true" ? "verdaderas" : "falsas"}`
-            : undefined,
-        puntaje: q.points,
-        incluyeGrafico: q.includesGraphic || false,
-      }))
-
-      console.log("[v0] Preguntas generadas:", preguntasGeneradas)
-      setExamenGenerado(preguntasGeneradas)
-      setShowExamen(true)
-    } catch (error) {
-      console.error("[v0] Error generando examen:", error)
-      alert(`Error al generar el examen: ${error instanceof Error ? error.message : "Error desconocido"}`)
-
-      // Fallback a preguntas simuladas en caso de error
-      console.log("[v0] Usando fallback a preguntas simuladas")
-      const preguntasGeneradas: PreguntaGenerada[] = preguntas.map((config, index) => {
-        const preguntaBase = {
-          id: `fallback-${config.id}`,
-          puntaje: config.puntaje,
-          incluyeGrafico: config.incluyeGrafico,
-        }
-
-        switch (config.tipoPregunta) {
-          case "multiple-opcion":
-            return {
-              ...preguntaBase,
-              tipo: "multiple-opcion" as const,
-              enunciado: `[FALLBACK] Pregunta de múltiple opción ${index + 1} sobre ${config.tipo} - La IA no pudo procesar el PDF correctamente`,
-              opciones: ["Opción A", "Opción B", "Opción C", "Opción D"],
-              respuestaCorrecta: 0,
-            }
-          case "desarrollo":
-            return {
-              ...preguntaBase,
-              tipo: "desarrollo" as const,
-              enunciado: `[FALLBACK] Pregunta de desarrollo ${index + 1} sobre ${config.tipo} - La IA no pudo procesar el PDF correctamente`,
-            }
-          case "verdadero-falso":
-            return {
-              ...preguntaBase,
-              tipo: "verdadero-falso" as const,
-              enunciado: `[FALLBACK] Pregunta verdadero/falso ${index + 1} sobre ${config.tipo} - La IA no pudo procesar el PDF correctamente`,
-              respuestaCorrecta: "verdadero",
-              justificacion:
-                config.justificacionVF !== "sin-justificar"
-                  ? `Justifique las respuestas ${config.justificacionVF}`
-                  : undefined,
-            }
-          default:
-            return preguntaBase as PreguntaGenerada
-        }
-      })
-
-      setExamenGenerado(preguntasGeneradas)
-      setShowExamen(true)
-    } finally {
-      setIsGenerating(false)
+    if (!uploadResponse.ok) {
+      const errText = await uploadResponse.text()
+      console.error("[v0] Upload failed response:", errText)
+      throw new Error("Error al subir el archivo PDF")
     }
+
+    const uploadResult = await uploadResponse.json()
+    console.log("[v0] Resultado de la subida:", uploadResult)
+
+    const pdfUrl = uploadResult.file?.url
+    console.log("[v0] PDF subido correctamente, URL:", pdfUrl)
+
+    if (!pdfUrl) {
+      throw new Error("No se pudo obtener la URL del PDF tras la subida")
+    }
+
+    // Procesar PDF para extraer texto
+    console.log("[v0] Procesando PDF...")
+    const processResponse = await fetch("/api/process-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pdfUrl, questionConfig: preguntas }),
+    })
+
+    if (!processResponse.ok) {
+      const errorText = await processResponse.text()
+      console.error("[v0] process-pdf devolvió error:", errorText)
+      throw new Error("Error en process-pdf (500)")
+    }
+
+    const processResult = await processResponse.json()
+    const pdfText = processResult.text
+    console.log("[v0] Texto extraído del PDF (primeros 200 chars):", pdfText?.substring(0, 200), "...")
+
+    // Generar preguntas con IA
+    console.log("[v0] Generando preguntas con IA...")
+    const generateResponse = await fetch("/api/generate-questions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pdfText,
+        questions: preguntas.map((p) => ({
+          type:
+            p.tipoPregunta === "multiple-opcion"
+              ? "multiple"
+              : p.tipoPregunta === "desarrollo"
+              ? "development"
+              : "truefalse",
+          points: p.puntaje,
+          category: p.tipo,
+          includesGraphic: p.incluyeGrafico,
+          justification:
+            p.justificacionVF === "verdaderas"
+              ? "true"
+              : p.justificacionVF === "falsas"
+              ? "false"
+              : "none",
+        })),
+      }),
+    })
+
+    if (!generateResponse.ok) {
+      const errorText = await generateResponse.text()
+      console.error("[v0] Generate questions failed response:", errorText)
+      throw new Error("Error al generar preguntas con IA")
+    }
+
+    // Obtener la respuesta JSON completa (ya no es streaming)
+    const fullResponse = await generateResponse.text()
+    console.log("[v0] Respuesta completa de IA raw:", fullResponse)
+
+    // Parsear JSON de forma segura
+    let aiQuestions
+    try {
+      if (!fullResponse.trim()) {
+        throw new Error("Respuesta vacía de la IA")
+      }
+
+      // Intentar parsear directamente (ya que ahora el backend devuelve JSON limpio)
+      aiQuestions = JSON.parse(fullResponse)
+      console.log("[v0] Preguntas parseadas de IA:", aiQuestions)
+      
+      // Validar estructura
+      if (!aiQuestions.questions || !Array.isArray(aiQuestions.questions)) {
+        throw new Error("Formato de respuesta inválido: falta array 'questions'")
+      }
+      
+    } catch (parseError) {
+      console.error("[v0] Error parseando respuesta de IA:", parseError)
+      console.log("[v0] Respuesta raw:", fullResponse)
+      throw new Error("Error al procesar la respuesta de la IA")
+    }
+
+    // Convertir preguntas de IA al formato interno
+const preguntasGeneradas: PreguntaGenerada[] = aiQuestions.questions.map((q: any, index: number) => ({
+  id: `gen-${Date.now()}-${index}`,
+  enunciado: q.question,
+  tipo:
+    q.type === "multiple"
+      ? ("multiple-opcion" as const)
+      : q.type === "development"
+      ? ("desarrollo" as const)
+      : ("verdadero-falso" as const),
+  opciones: q.options || undefined,
+  respuestaCorrecta: q.correctAnswer || undefined,
+  justificacion:
+    q.justification && q.justification !== "none"
+      ? `Justifique las respuestas ${q.justification === "true" ? "verdaderas" : "falsas"}`
+      : undefined,
+  puntaje: q.points,
+  incluyeGrafico: q.includesGraphic || false,
+  graphicData: q.graphicData || undefined, // NUEVA LÍNEA
+}))
+
+    console.log("[v0] Preguntas generadas:", preguntasGeneradas)
+    setExamenGenerado(preguntasGeneradas)
+    setShowExamen(true)
+    
+  } catch (error) {
+    console.error("[v0] Error generando examen:", error)
+    alert(`Error al generar el examen: ${error instanceof Error ? error.message : "Error desconocido"}`)
+
+    // Fallback a preguntas simuladas
+    console.log("[v0] Usando fallback a preguntas simuladas")
+    const preguntasGeneradas: PreguntaGenerada[] = preguntas.map((config, index) => {
+      const preguntaBase = {
+        id: `fallback-${config.id}`,
+        puntaje: config.puntaje,
+        incluyeGrafico: config.incluyeGrafico,
+      }
+
+      switch (config.tipoPregunta) {
+        case "multiple-opcion":
+          return {
+            ...preguntaBase,
+            tipo: "multiple-opcion" as const,
+            enunciado: `[FALLBACK] Pregunta de múltiple opción ${index + 1} sobre ${config.tipo} - La IA no pudo procesar el PDF correctamente`,
+            opciones: ["Opción A", "Opción B", "Opción C", "Opción D"],
+            respuestaCorrecta: 0,
+          }
+        case "desarrollo":
+          return {
+            ...preguntaBase,
+            tipo: "desarrollo" as const,
+            enunciado: `[FALLBACK] Pregunta de desarrollo ${index + 1} sobre ${config.tipo} - La IA no pudo procesar el PDF correctamente`,
+          }
+        case "verdadero-falso":
+          return {
+            ...preguntaBase,
+            tipo: "verdadero-falso" as const,
+            enunciado: `[FALLBACK] Pregunta verdadero/falso ${index + 1} sobre ${config.tipo} - La IA no pudo procesar el PDF correctamente`,
+            respuestaCorrecta: "verdadero",
+            justificacion:
+              config.justificacionVF !== "sin-justificar"
+                ? `Justifique las respuestas ${config.justificacionVF}`
+                : undefined,
+          }
+        default:
+          return preguntaBase as PreguntaGenerada
+      }
+    })
+
+    setExamenGenerado(preguntasGeneradas)
+    setShowExamen(true)
+  } finally {
+    setIsGenerating(false)
   }
+}
+
+
 
   const handleEditQuestion = (id: string) => {
     setEditingQuestion(id)
@@ -345,50 +374,59 @@ export default function GenerarExamenPage() {
   }
 
   const handleConfirmExport = async () => {
-    if (!nombreExamen.trim() || !catedraSeleccionada) return
+  if (!nombreExamen.trim() || !catedraSeleccionada) return
 
-    const examenData: ExamenData = {
+  const requestBody = {
+    examenData: {
       nombre: nombreExamen,
-      catedra: catedraSeleccionada,
+      catedraId: catedraSeleccionada,
       preguntas: examenGenerado,
-      fechaCreacion: new Date(),
-    }
-
-    try {
-      const response = await fetch("/api/export-pdf", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ examenData }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Error al generar PDF")
-      }
-
-      // Descargar el PDF generado
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `${nombreExamen.replace(/\s+/g, "_")}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      // Cerrar diálogo
-      setShowExportDialog(false)
-      setNombreExamen("")
-      setCatedraSeleccionada("")
-
-      alert("Examen exportado y guardado exitosamente!")
-    } catch (error) {
-      console.error("Error exportando examen:", error)
-      alert("Error al exportar el examen")
     }
   }
+
+  try {
+    console.log("Enviando datos:", requestBody)
+
+    const response = await fetch("/api/export-pdf", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error("Error del servidor:", errorText)
+      throw new Error("Error al generar PDF")
+    }
+
+    // Descargar el PDF generado
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${nombreExamen.replace(/\s+/g, "_")}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+
+    // Resetear formulario
+    setShowExportDialog(false)
+    setNombreExamen("")
+    setCatedraSeleccionada("")
+
+    alert("Examen exportado y guardado exitosamente!")
+    
+    // Redirigir a la página principal
+    router.push('/')
+    
+  } catch (error) {
+    console.error("Error exportando examen:", error)
+    alert("Error al exportar el examen")
+  }
+}
 
   const handleShowPreview = () => {
     setShowPreview(true)
@@ -449,9 +487,11 @@ export default function GenerarExamenPage() {
 
                   <input type="file" accept=".pdf" onChange={handleFileSelect} className="hidden" id="file-upload" />
 
-                  <label htmlFor="file-upload">
-                    <Button className="bg-indigo-500 hover:bg-indigo-600 text-white">Seleccionar Archivo PDF</Button>
-                  </label>
+                  <Button className="bg-indigo-500 hover:bg-indigo-600 text-white" asChild>
+  <label htmlFor="file-upload" className="cursor-pointer">
+    Seleccionar Archivo PDF
+  </label>
+</Button>
 
                   <p className="text-xs text-slate-400 mt-4">Solo se aceptan archivos PDF (máximo 10MB)</p>
                 </div>
@@ -591,12 +631,17 @@ export default function GenerarExamenPage() {
                     </div>
                   )}
 
-                  {/* Indicador de gráfico */}
-                  {pregunta.incluyeGrafico && (
-                    <div className="ml-4 mt-4 p-4 border-2 border-dashed border-slate-300 rounded-lg">
-                      <p className="text-center text-slate-500 text-sm">[ Espacio reservado para gráfico ]</p>
-                    </div>
-                  )}
+                  {/* Gráfico matemático */}
+{pregunta.incluyeGrafico && pregunta.graphicData && (
+  <div className="ml-4 mt-4 math-graph">
+    <MathGraph graphicData={pregunta.graphicData} />
+  </div>
+)}
+{pregunta.incluyeGrafico && !pregunta.graphicData && (
+  <div className="ml-4 mt-4 p-4 border-2 border-dashed border-slate-300 rounded-lg">
+    <p className="text-center text-slate-500 text-sm">[ Gráfico no generado ]</p>
+  </div>
+)}
                 </div>
               ))}
             </div>
@@ -716,7 +761,7 @@ export default function GenerarExamenPage() {
                   </div>
                 ) : (
                   <div className="mb-4">
-                    <p className="text-slate-800 leading-relaxed">{pregunta.enunciado}</p>
+                    <MathText className="text-slate-800 leading-relaxed">{pregunta.enunciado}</MathText>
                   </div>
                 )}
 
@@ -732,7 +777,7 @@ export default function GenerarExamenPage() {
                         >
                           <span className="text-sm font-medium">{String.fromCharCode(65 + idx)}</span>
                         </div>
-                        <span className="text-slate-700">{opcion}</span>
+                        <MathText className="text-slate-700">{opcion}</MathText>
                       </div>
                     ))}
                   </div>
@@ -745,6 +790,19 @@ export default function GenerarExamenPage() {
                     <p className="text-sm text-slate-700">{pregunta.justificacion}</p>
                   </div>
                 )}
+
+                {/* Gráfico matemático */}
+                {pregunta.incluyeGrafico && pregunta.graphicData && (
+                  <div className="mt-4 math-graph">
+                    <MathGraph graphicData={pregunta.graphicData} />
+                  </div>
+                )}
+                {pregunta.incluyeGrafico && !pregunta.graphicData && (
+                  <div className="mt-4 p-4 border-2 border-dashed border-slate-300 rounded-lg">
+                    <p className="text-center text-slate-500 text-sm">[ Gráfico no generado ]</p>
+                  </div>
+                )}
+
               </Card>
             ))}
           </div>
@@ -788,21 +846,22 @@ export default function GenerarExamenPage() {
                   </div>
 
                   <div>
-                    <Label className="text-sm font-medium text-slate-700 mb-3 block">Cátedra</Label>
-                    <RadioGroup value={catedraSeleccionada} onValueChange={setCatedraSeleccionada}>
-                      <div className="grid grid-cols-2 gap-2">
-                        {catedras.map((catedra) => (
-                          <div key={catedra} className="flex items-center space-x-2">
-                            <RadioGroupItem value={catedra} id={catedra} />
-                            <Label htmlFor={catedra} className="text-sm">
-                              {catedra}
-                            </Label>
-                          </div>
-                        ))}
-                      </div>
-                    </RadioGroup>
-                  </div>
+                  <Label className="text-sm font-medium text-slate-700 mb-3 block">Cátedra</Label>
+                  <RadioGroup value={catedraSeleccionada} onValueChange={setCatedraSeleccionada}>
+                    <div className="grid grid-cols-2 gap-2">
+                      {catedras.map((catedra) => (
+                        <div key={catedra.id} className="flex items-center space-x-2">
+                          <RadioGroupItem value={catedra.id} id={catedra.id} />
+                          <Label htmlFor={catedra.id} className="text-sm">
+                            {catedra.nombre}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </RadioGroup>
                 </div>
+                </div>
+
 
                 <div className="flex gap-3 mt-6">
                   <Button

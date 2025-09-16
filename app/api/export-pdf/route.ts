@@ -15,7 +15,7 @@ interface PreguntaGenerada {
 
 interface ExamenData {
   nombre: string
-  catedra: string
+  catedraId: string // Cambiado de 'catedra: string' a 'catedraId: string'
   preguntas: PreguntaGenerada[]
   fechaCreacion: Date
 }
@@ -27,13 +27,14 @@ export async function POST(request: NextRequest) {
     const { examenData }: { examenData: ExamenData } = await request.json()
     console.log("[v0] Datos recibidos:", {
       nombre: examenData?.nombre,
-      catedra: examenData?.catedra,
+      catedraId: examenData?.catedraId, // Ahora es catedraId
       preguntasCount: examenData?.preguntas?.length,
     })
 
-    if (!examenData || !examenData.nombre || !examenData.catedra || !examenData.preguntas?.length) {
-      console.log("[v0] Error: Datos del examen incompletos")
-      return NextResponse.json({ error: "Datos del examen incompletos" }, { status: 400 })
+    // Asegurarse de que catedraId esté presente, ya que en la DB es NOT NULL
+    if (!examenData || !examenData.nombre || !examenData.catedraId || !examenData.preguntas?.length) {
+      console.log("[v0] Error: Datos del examen incompletos (nombre, catedraId o preguntas)")
+      return NextResponse.json({ error: "Datos del examen incompletos (nombre, catedraId o preguntas)" }, { status: 400 })
     }
 
     console.log("[v0] Creando documento PDF")
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     let yPosition = height - 50
 
-    // Encabezado del examen
+    // Encabezado del examen (se asume que el nombre de la cátedra se mostrará desde el frontend)
     page.drawText(examenData.nombre, {
       x: 50,
       y: yPosition,
@@ -57,14 +58,16 @@ export async function POST(request: NextRequest) {
     })
     yPosition -= 30
 
-    page.drawText(`Cátedra: ${examenData.catedra}`, {
-      x: 50,
-      y: yPosition,
-      size: 12,
-      font: timesRomanFont,
-      color: rgb(0, 0, 0),
-    })
-    yPosition -= 20
+    // Si quieres mostrar el nombre de la cátedra, necesitarías que el frontend también envíe el 'catedraName'
+    // Por ahora, lo dejamos sin el nombre de la cátedra aquí para no complicar el tipo de 'ExamenData'
+    // page.drawText(`Cátedra: ${examenData.catedraName}`, {
+    //   x: 50,
+    //   y: yPosition,
+    //   size: 12,
+    //   font: timesRomanFont,
+    //   color: rgb(0, 0, 0),
+    // });
+    // yPosition -= 20;
 
     page.drawText(`Fecha: ${new Date().toLocaleDateString()}`, {
       x: 50,
@@ -241,29 +244,31 @@ export async function POST(request: NextRequest) {
     })
 
     console.log("[v0] Guardando en base de datos")
-    // Guardar en base de datos
     const supabase = createClient()
 
-    const { data: catedraData, error: catedraError } = await supabase
-      .from("catedras")
-      .select("id")
-      .eq("nombre", examenData.catedra)
-      .single()
-
-    if (catedraError) {
-      console.log("[v0] Error buscando cátedra:", catedraError)
-    }
-
+    // No se busca la cátedra por nombre, se usa el ID directamente
     const { error: dbError } = await supabase.from("examenes").insert({
       nombre: examenData.nombre,
-      catedra_id: catedraData?.id || null,
-      preguntas_json: examenData.preguntas,
+      catedra_id: examenData.catedraId, // Se usa el ID que viene del frontend
+      preguntas: examenData.preguntas, // Tu esquema usa 'preguntas' (jsonb), no 'preguntas_json'
       created_at: new Date().toISOString(),
     })
 
     if (dbError) {
       console.error("[v0] Error guardando en base de datos:", dbError)
+      // Código de error 23503 es para Foreign Key Violation
+      if (dbError.code === "23503") {
+        return NextResponse.json(
+          { error: "La cátedra especificada no existe. Por favor, asegúrate de que la cátedra exista y sea válida." },
+          { status: 404 },
+        )
+      }
+      return NextResponse.json(
+        { error: "Error guardando el examen en la base de datos", details: dbError.message },
+        { status: 500 },
+      )
     }
+    console.log("[v0] Examen guardado exitosamente en la base de datos.")
 
     console.log("[v0] Generando bytes del PDF")
     // Generar PDF

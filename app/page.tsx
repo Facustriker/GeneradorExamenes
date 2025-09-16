@@ -1,13 +1,21 @@
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Plus, History, Settings } from "lucide-react"
+import { Plus, History, Settings, Activity } from "lucide-react"
 import Link from "next/link"
 
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex justify-end">
+        <div className="max-w-4xl mx-auto px-6 py-4 flex justify-end gap-3">
+          <Link href="/diagnostico">
+          {/* DESCOMENTAR PARA VERIFICAR APIS
+            <Button variant="outline" className="flex items-center gap-2 bg-transparent">
+              <Activity className="w-4 h-4" />
+              Diagnóstico APIs
+            </Button>
+          */}
+          </Link>
           <Link href="/catedras">
             <Button variant="outline" className="flex items-center gap-2 bg-transparent">
               <Settings className="w-4 h-4" />
