@@ -54,21 +54,26 @@ export async function POST(request: NextRequest) {
 
     console.log(`[API] Longitud del texto PDF: ${pdfText.length} chars (truncado a: ${truncatedPdfText.length})`)
 
-    const prompt = `Basándote en el siguiente contenido de un documento académico, genera un examen con las siguientes especificaciones:
+    const prompt = `Eres un experto en generar preguntas para exámenes universitarios de física y matemáticas. Tu tarea es crear exactamente ${questions.length} preguntas basadas EXCLUSIVAMENTE en el contenido del texto proporcionado del PDF (que son extractos de ejercicios de un libro). NO agregues conceptos, fórmulas o ideas que no estén explícitamente en el texto. Las preguntas deben ser realistas, como las que se toman en exámenes universitarios reales: directas, enfocadas en comprensión conceptual, aplicación de fórmulas y cálculos de lo cubierto, sin elementos ficticios o "raros".
 
-CONTENIDO DEL DOCUMENTO:
+CONTENIDO DEL DOCUMENTO (usa SOLO esto para generar preguntas):
 ${truncatedPdfText}
 
 CONFIGURACIÓN DE PREGUNTAS:
 ${questionsConfig}
 
-INSTRUCCIONES:
-1. Genera preguntas que evalúen comprensión, aplicación y análisis del contenido
-2. Para múltiple opción: incluye 4 opciones (A, B, C, D) con una correcta
-3. Para desarrollo: formula preguntas que requieran explicación detallada
-4. Para verdadero/falso: crea afirmaciones claras sobre conceptos del documento
-5. Para preguntas con gráfico: genera datos matemáticos precisos para graficar
-6. Mantén coherencia con el nivel académico del documento
+INSTRUCCIONES DETALLADAS:
+- Genera preguntas que evalúen comprensión, aplicación y análisis del contenido, similares a ejercicios de libros universitarios.
+- Para type "multiple": Genera una pregunta con 4 opciones (A, B, C, D). Una correcta basada en el texto, las otras distractores plausibles (errores comunes o variaciones de lo visto en el PDF). Incluye fórmulas en LaTeX con $$.
+- Para type "development": Genera una pregunta abierta que pida explicación, derivación o cálculo de algo específico del texto. Debe requerir razonamiento paso a paso de lo cubierto.
+- Para type "truefalse": Genera una afirmación verdadera o falsa basada directamente en el texto. Si justification es "true" o "false", incluye el texto "Justifique las respuestas [verdaderas/falsas]".
+- Si includesGraphic es true: Incluye un graphicData simple y relevante (type: 'line', 'bar' o 'scatter'; title, xLabel, yLabel; data como array de {x,y}; annotations opcionales). El gráfico debe representar algo del texto (e.g., posición vs tiempo en MRU).
+- Category: Asegura que la pregunta sea de "teoria" (definiciones/demostraciones), "practica" (ejercicios/cálculos) o "mixta".
+- Points: Usa el valor dado.
+- Justification: Solo si es "true" o "false", agrega el texto de justificación.
+- Usa español para todo. Fórmulas en LaTeX inline con $ (e.g., $v = \\frac{\\Delta x}{\\Delta t}$).
+- Evita repeticiones; varía las preguntas para cubrir diferentes partes del texto.
+- Mantén títulos y textos cortos (máximo 30 caracteres).
 
 INSTRUCCIONES ESPECIALES PARA MATEMÁTICA:
 - Para ecuaciones matemáticas, usa sintaxis LaTeX entre $ para inline: $E_c = \\\\frac{1}{2}mv^2$
@@ -88,9 +93,8 @@ FORMATO DE RESPUESTA (JSON válido, títulos cortos):
       "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
       "correctAnswer": 0,
       "points": 10,
-      "category": "teoría",
       "includesGraphic": false,
-      "justification": "none",
+      "justification": "true|false|none",
       "graphicData": {
         "type": "line",
         "title": "Título corto",
@@ -104,7 +108,6 @@ FORMATO DE RESPUESTA (JSON válido, títulos cortos):
 }
 
 IMPORTANTE: 
-- Mantén títulos y textos cortos (máximo 30 caracteres)
 - Para múltiple opción: "correctAnswer" debe ser índice (0, 1, 2, 3)
 - Para verdadero/falso: "correctAnswer" debe ser "verdadero" o "falso"
 - Solo incluye "options" para múltiple opción
@@ -137,7 +140,7 @@ IMPORTANTE:
       
       // Limpiar caracteres problemáticos
       cleaned = cleaned
-        .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remover caracteres de control
+        .replace(/[-\u001F\u007F-\u009F]/g, '') // Remover caracteres de control
         .replace(/\n\s*\n/g, ' ') // Múltiples saltos de línea
         .replace(/\s+/g, ' ') // Espacios múltiples
         .trim()
