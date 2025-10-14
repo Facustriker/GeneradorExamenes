@@ -22,6 +22,12 @@ export default function HomePage() {
               Agregar Cátedras
             </Button>
           </Link>
+          <Link href="/carreras">
+            <Button variant="outline" className="flex items-center gap-2 bg-transparent">
+              <Settings className="w-4 h-4" />
+              Agregar Carreras
+            </Button>
+          </Link>
         </div>
       </header>
 

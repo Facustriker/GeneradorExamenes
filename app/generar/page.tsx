@@ -62,6 +62,13 @@ export default function GenerarExamenPage() {
   const [nombreExamen, setNombreExamen] = useState("")
   const [catedraSeleccionada, setCatedraSeleccionada] = useState("")
   const [error, setError] = useState("")
+  const [isExporting, setIsExporting] = useState(false)
+  const [lastGenerationConfig, setLastGenerationConfig] = useState<{
+  preguntas: Pregunta[]
+  selectedFile: File | null
+} | null>(null)
+
+
 
   // Traer cátedras desde la base de datos
   useEffect(() => {
@@ -168,6 +175,8 @@ export default function GenerarExamenPage() {
   // Funciones para generar examen con IA
 const handleCreateExam = async () => {
   if (!selectedFile || preguntas.length === 0) return
+
+  setLastGenerationConfig({ preguntas: [...preguntas], selectedFile })
 
   setIsGenerating(true)
 
@@ -355,7 +364,6 @@ const preguntasGeneradas: PreguntaGenerada[] = aiQuestions.questions.map((q: any
 }
 
 
-
   const handleEditQuestion = (id: string) => {
     setEditingQuestion(id)
   }
@@ -375,6 +383,8 @@ const preguntasGeneradas: PreguntaGenerada[] = aiQuestions.questions.map((q: any
 
   const handleConfirmExport = async () => {
   if (!nombreExamen.trim() || !catedraSeleccionada) return
+
+  setIsExporting(true) // <-- Activamos el loader
 
   const requestBody = {
     examenData: {
@@ -406,7 +416,7 @@ const preguntasGeneradas: PreguntaGenerada[] = aiQuestions.questions.map((q: any
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `${nombreExamen.replace(/\s+/g, "_")}.pdf`
+    a.download = `${nombreExamen.replace(/\s+/g, "_")}.docx`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -425,6 +435,8 @@ const preguntasGeneradas: PreguntaGenerada[] = aiQuestions.questions.map((q: any
   } catch (error) {
     console.error("Error exportando examen:", error)
     alert("Error al exportar el examen")
+  } finally {
+    setIsExporting(false) // <-- Desactivamos el loader
   }
 }
 
@@ -808,17 +820,19 @@ const preguntasGeneradas: PreguntaGenerada[] = aiQuestions.questions.map((q: any
           </div>
 
           <div className="flex gap-4 mt-8">
-            <Button
-              onClick={handleShowPreview}
-              variant="outline"
-              className="flex-1 border-indigo-500 text-indigo-600 hover:bg-indigo-50 bg-transparent"
-            >
-              Vista Previa
-            </Button>
-            <Button onClick={handleExportToPDF} className="flex-1 bg-green-500 hover:bg-green-600 text-white">
-              Exportar a PDF
-            </Button>
-          </div>
+  
+  <Button
+    onClick={() => setShowExamen(false)}
+    className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-white"
+    disabled={isGenerating || !lastGenerationConfig}
+  >
+    {isGenerating ? "Generando..." : "Volver a Generar"}
+  </Button>
+  <Button onClick={handleExportToPDF} className="flex-1 bg-green-500 hover:bg-green-600 text-white">
+    Exportar a Word
+  </Button>
+</div>
+
 
           {examenGenerado.length === 0 && (
             <Card className="p-8 bg-white border-slate-200 text-center">
@@ -865,12 +879,14 @@ const preguntasGeneradas: PreguntaGenerada[] = aiQuestions.questions.map((q: any
 
                 <div className="flex gap-3 mt-6">
                   <Button
-                    onClick={handleConfirmExport}
-                    disabled={!nombreExamen.trim() || !catedraSeleccionada}
-                    className="flex-1 bg-green-500 hover:bg-green-600 text-white"
-                  >
-                    Confirmar Exportación
-                  </Button>
+  onClick={handleConfirmExport}
+  disabled={!nombreExamen.trim() || !catedraSeleccionada || isExporting}
+  className="flex-1 bg-green-500 hover:bg-green-600 text-white flex items-center justify-center gap-2"
+>
+  {isExporting && <Loader2 className="w-4 h-4 animate-spin" />}
+  {isExporting ? "Exportando..." : "Confirmar Exportación"}
+</Button>
+
                   <Button
                     variant="outline"
                     onClick={() => {

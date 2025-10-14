@@ -226,6 +226,10 @@ IMPORTANTE:
     }
 
     const result = await generateWithRetry(3)
+
+    console.log("[API] ========== RESPUESTA COMPLETA DE GROQ ==========")
+    console.log(result.text)
+    console.log("[API] ================================================")
     
     // Limpiar y validar JSON
     const cleanedJson = cleanAndValidateJson(result.text)
